@@ -60,52 +60,6 @@ The dashboard refreshes every 10 seconds and shows 24-hour, 7-day, 30-day, or
 all-time inspection activity; review outcomes; open review backlog; policy
 reason codes; and latency p50/p95 measurements.
 
-## Operations briefing snapshot
-
-The optional Operations Briefing is built in stages. Its first stage is a
-deterministic, typed snapshot—not an LLM response. It packages the selected
-dashboard period's activity, review outcomes, queue, policy reasons, review
-dispositions, latency metrics, and deterministic SOP evidence for a later
-constrained generator. Each evidence item is an approved SOP section selected
-by the policy-reason routing table, with its source reason code and related
-event count; it is not an unrestricted document search.
-
-```bash
-curl "http://127.0.0.1:8000/v1/operations/briefing-snapshot?period=24h"
-```
-
-Supported periods are `24h`, `7d`, `30d`, and `all`. The snapshot endpoint
-does not call Ollama and cannot change any inspection decision.
-
-## Optional Operations Briefing narrator
-
-`/v1/operations/briefing` turns the immutable snapshot into a bounded shift
-summary. It may describe trends and suggest operational follow-up, but has no
-field for a per-part decision and cannot modify the inspection workflow. The
-default is a deterministic template:
-
-```bash
-curl "http://127.0.0.1:8000/v1/operations/briefing?period=24h"
-```
-
-In the Operations Dashboard, select a period and use **Generate briefing**.
-The dashboard does not regenerate it during its regular data refresh, avoiding
-an unnecessary local-model call every ten seconds.
-
-To enable a local Ollama narrator, configure it separately from the
-per-inspection explainer:
-
-```bash
-export OPERATIONS_BRIEFING_PROVIDER=ollama
-export OPERATIONS_BRIEFING_OLLAMA_MODEL=qwen2.5:1.5b
-uvicorn app.api:app --reload
-```
-
-The response is schema-validated. Every action's policy reason and every SOP
-reference must occur in the supplied snapshot; malformed output, an invented
-reference, an unexpected field such as `decision`, or an unavailable Ollama
-service returns the deterministic template with a `fallback_reason`.
-
 ## Retrieval-augmented procedures
 
 The default local mode uses deterministic lexical retrieval over the approved
