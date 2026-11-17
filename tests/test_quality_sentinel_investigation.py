@@ -97,6 +97,7 @@ def test_registry_exposes_newly_registered_tool_without_a_graph_change():
         status: str
 
     class FutureMetricTool:
+        input_model = FutureMetricInput
         descriptor = ToolDescriptor(
             name="get_future_metric",
             purpose="Returns a future quality metric.",

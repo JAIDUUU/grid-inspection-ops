@@ -104,6 +104,7 @@ class SqliteQualityDataReader:
 
 class MetricTool(Protocol):
     descriptor: ToolDescriptor
+    input_model: type[BaseModel]
 
     def run(self, reader: QualityDataReader, raw_input: dict[str, Any]) -> BaseModel: ...
 
@@ -124,17 +125,25 @@ class MetricToolRegistry:
     def descriptors(self) -> list[ToolDescriptor]:
         return [self._tools[name].descriptor for name in sorted(self._tools)]
 
+    def validate_input(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        """Validate and normalize an untrusted tool call without querying data."""
+
+        try:
+            tool = self._tools[name]
+        except KeyError as error:
+            raise ValueError(f"unknown metric tool: {name}") from error
+        return tool.input_model.model_validate(raw_input).model_dump(mode="json")
+
     def execute(
         self,
         name: str,
         reader: QualityDataReader,
         raw_input: dict[str, Any],
     ) -> BaseModel:
-        try:
-            tool = self._tools[name]
-        except KeyError as error:
-            raise ValueError(f"unknown metric tool: {name}") from error
-        return tool.run(reader, raw_input)
+        tool = self._tools.get(name)
+        if tool is None:
+            raise ValueError(f"unknown metric tool: {name}")
+        return tool.run(reader, self.validate_input(name, raw_input))
 
 
 class CohortTrendPoint(BaseModel):
