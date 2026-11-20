@@ -125,6 +125,10 @@ class MetricToolRegistry:
     def descriptors(self) -> list[ToolDescriptor]:
         return [self._tools[name].descriptor for name in sorted(self._tools)]
 
+    def get(self, name: str) -> MetricTool | None:
+        """Retrieve a registered metric tool by name."""
+        return self._tools.get(name)
+
     def validate_input(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
         """Validate and normalize an untrusted tool call without querying data."""
 

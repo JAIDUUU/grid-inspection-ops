@@ -17,6 +17,18 @@ from .explain import OllamaProcedureExplainer, SafeTemplateExplainer
 from .graph import build_inspection_graph
 from .model_artifacts import download_grid_model
 from .pinecone_rag import PineconeSopRetriever
+from .quality_sentinel.graph import SentinelState, build_sentinel_graph
+from .quality_sentinel.investigation import (
+    SqliteQualityDataReader,
+    build_default_tool_registry,
+)
+from .quality_sentinel.planner import DefaultRulePlanner
+from .quality_sentinel.storage import SentinelRunRecord, SqliteSentinelRepository
+from .quality_sentinel.synthesis import (
+    DataGapSignal,
+    QualitySignalCard,
+    SafeSignalSynthesizer,
+)
 from .rag import SopRetriever
 from .repository import SqliteInspectionRepository
 from .vision import GridPatchCoreVision
@@ -187,3 +199,60 @@ def resolve_review(inspection_id: str, request: ReviewRequest):
 def dashboard():
     _, repository = runtime()
     return repository.dashboard_summary()
+
+
+class SentinelRunRequest(BaseModel):
+    analysis_end: datetime | None = None
+    current_hours: int = Field(default=24, ge=1, le=168)
+    baseline_days: int = Field(default=7, ge=1, le=90)
+
+
+def sentinel_runtime():
+    if not hasattr(app.state, "sentinel_graph"):
+        db_path = os.getenv("DATABASE_PATH", "runtime/inspections.db")
+        SqliteInspectionRepository(db_path)
+        storage = SqliteSentinelRepository(db_path)
+        reader = SqliteQualityDataReader(db_path)
+        registry = build_default_tool_registry()
+        planner = DefaultRulePlanner()
+        synthesizer = SafeSignalSynthesizer()
+        graph = build_sentinel_graph(
+            reader=reader,
+            registry=registry,
+            storage=storage,
+            planner=planner,
+            synthesizer=synthesizer,
+        )
+        app.state.sentinel_storage = storage
+        app.state.sentinel_graph = graph
+    return app.state.sentinel_graph, app.state.sentinel_storage
+
+
+@app.get("/v1/quality-sentinel/signals")
+def list_quality_signals(limit: int = 50) -> list[QualitySignalCard | DataGapSignal]:
+    _, storage = sentinel_runtime()
+    return storage.list_signals(limit=min(max(limit, 1), 200))
+
+
+@app.get("/v1/quality-sentinel/runs")
+def list_sentinel_runs(limit: int = 20) -> list[SentinelRunRecord]:
+    _, storage = sentinel_runtime()
+    return storage.list_runs(limit=min(max(limit, 1), 100))
+
+
+@app.post("/v1/quality-sentinel/run")
+def trigger_sentinel_run(request: SentinelRunRequest | None = None) -> SentinelRunRecord:
+    graph, _ = sentinel_runtime()
+    req = request or SentinelRunRequest()
+    state: SentinelState = {
+        "current_hours": req.current_hours,
+        "baseline_days": req.baseline_days,
+    }
+    if req.analysis_end is not None:
+        state["analysis_end"] = req.analysis_end
+    result = graph.invoke(state)
+    record = result.get("run_record")
+    if record is None:
+        raise HTTPException(500, "Sentinel run did not produce a run record")
+    return record
+
